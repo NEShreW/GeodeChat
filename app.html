@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeodeChat</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MAIN APP — four-column Discord-like layout
+     [ guild-bar | channel-sidebar | chat-area | member-list ]
+═══════════════════════════════════════════════════════════ -->
+<div class="app">
+
+  <!-- ─── GUILD BAR (leftmost — server icons) ─── -->
+  <nav class="guild-bar" aria-label="Servers">
+    <!-- Filled dynamically by app.js -->
+    <div id="guild-list"></div>
+
+    <div class="guild-separator" role="separator"></div>
+
+    <button class="guild-add-btn" id="btn-add-guild"
+            title="Add a Server" aria-label="Add or join a server">+</button>
+  </nav>
+
+  <!-- ─── CHANNEL SIDEBAR ─── -->
+  <aside class="channel-sidebar" aria-label="Channels">
+
+    <!-- Guild name / dropdown trigger -->
+    <div class="guild-header" id="guild-header"
+         role="button" tabindex="0" aria-haspopup="true" aria-expanded="false">
+      <span class="guild-header-name" id="guild-header-name">GeodeChat</span>
+      <span aria-hidden="true">▾</span>
+
+      <!-- Dropdown menu (hidden until guild-header is clicked) -->
+      <div class="dropdown-menu hidden" id="guild-dropdown" role="menu">
+        <div class="dropdown-item hidden" id="btn-invite" role="menuitem"
+             tabindex="-1">🔗 Invite People</div>
+        <div class="dropdown-item hidden" id="btn-create-channel" role="menuitem"
+             tabindex="-1">＋ Create Channel</div>
+        <div class="dropdown-item danger" id="btn-leave-guild" role="menuitem"
+             tabindex="-1">🚪 Leave Server</div>
+        <div class="dropdown-item danger hidden" id="btn-delete-guild" role="menuitem"
+             tabindex="-1">🗑 Delete Server</div>
+      </div>
+    </div>
+
+    <!-- Channel list (filled by app.js) -->
+    <div class="channel-list" id="channel-list" role="list"></div>
+
+    <!-- Current-user area pinned to the bottom -->
+    <div class="user-area">
+      <div class="user-avatar" id="user-avatar" aria-hidden="true">?</div>
+      <div class="user-info">
+        <div class="user-name" id="current-username">Loading…</div>
+        <div class="user-status">Online</div>
+      </div>
+      <button class="icon-btn" id="btn-signout"
+              title="Sign Out" aria-label="Sign out">⏏</button>
+    </div>
+
+  </aside>
+
+  <!-- ─── CHAT AREA ─── -->
+  <main class="chat-area" aria-label="Chat">
+
+    <!-- Channel header -->
+    <header class="chat-header">
+      <span class="channel-hash" aria-hidden="true">#</span>
+      <span id="chat-channel-name">Select a channel</span>
+    </header>
+
+    <!-- Messages (filled + updated by app.js with realtime) -->
+    <div class="messages-container" id="messages-container"
+         role="log" aria-live="polite" aria-label="Messages">
+      <div class="chat-welcome">
+        <div style="font-size:52px;margin-bottom:16px;">💬</div>
+        <h2>Welcome to GeodeChat!</h2>
+        <p>Select a server and channel to start chatting.</p>
+      </div>
+    </div>
+
+    <!-- Message input (hidden until a channel is selected) -->
+    <div class="message-input-area hidden" id="message-input-area">
+      <div class="message-input-wrapper">
+        <input
+          class="message-input"
+          id="message-input"
+          type="text"
+          placeholder="Message #channel"
+          maxlength="2000"
+          autocomplete="off"
+          aria-label="Message input"
+        />
+        <button class="send-btn" id="btn-send-message" aria-label="Send message">Send</button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ─── MEMBER LIST (rightmost) ─── -->
+  <aside class="member-list" id="member-list" aria-label="Members"></aside>
+
+</div><!-- /.app -->
+
+<!-- ═══════════════════════════════════════════════════════════
+     TOAST CONTAINER
+═══════════════════════════════════════════════════════════ -->
+<div class="toast-container" id="toast-container"
+     aria-live="polite" aria-atomic="false"></div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MODALS
+═══════════════════════════════════════════════════════════ -->
+
+<!-- Guild options: create or join -->
+<div class="modal-overlay hidden" id="modal-guild-options"
+     role="dialog" aria-modal="true" aria-labelledby="lbl-guild-options">
+  <div class="modal">
+    <div class="modal-title" id="lbl-guild-options">Add a Server</div>
+    <div class="modal-subtitle">Create your own or join an existing one.</div>
+    <div class="modal-footer" style="flex-direction:column;gap:10px;margin-top:16px;">
+      <button class="btn btn-primary btn-full" id="btn-show-create-guild">
+        Create a Server
+      </button>
+      <button class="btn btn-ghost btn-full" id="btn-show-join-guild">
+        Join a Server
+      </button>
+      <button class="btn btn-secondary btn-full" data-close-modal="modal-guild-options">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Create guild -->
+<div class="modal-overlay hidden" id="modal-create-guild"
+     role="dialog" aria-modal="true" aria-labelledby="lbl-create-guild">
+  <div class="modal">
+    <div class="modal-title" id="lbl-create-guild">Create a Server</div>
+    <div class="modal-subtitle">Give your server a name. You can change this later.</div>
+    <form id="form-create-guild">
+      <div class="form-group">
+        <label class="form-label" for="input-guild-name">Server Name</label>
+        <input class="form-input" type="text" id="input-guild-name"
+               placeholder="My Awesome Server" required maxlength="64" />
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary"
+                data-close-modal="modal-create-guild">Back</button>
+        <button type="submit" class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Join guild by invite code -->
+<div class="modal-overlay hidden" id="modal-join-guild"
+     role="dialog" aria-modal="true" aria-labelledby="lbl-join-guild">
+  <div class="modal">
+    <div class="modal-title" id="lbl-join-guild">Join a Server</div>
+    <div class="modal-subtitle">
+      Paste a public invite link or a one-time short code below.
+    </div>
+    <form id="form-join-guild">
+      <div class="form-group">
+        <label class="form-label" for="input-invite-code">Invite Link or Code</label>
+        <input class="form-input" type="text" id="input-invite-code"
+               placeholder="https://… or AbC1234" required />
+      </div>
+      <div id="join-error" class="form-error hidden"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary"
+                data-close-modal="modal-join-guild">Back</button>
+        <button type="submit" class="btn btn-primary">Join Server</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Create channel -->
+<div class="modal-overlay hidden" id="modal-create-channel"
+     role="dialog" aria-modal="true" aria-labelledby="lbl-create-channel">
+  <div class="modal">
+    <div class="modal-title" id="lbl-create-channel">Create Channel</div>
+    <div class="modal-subtitle">Add a new text channel to this server.</div>
+    <form id="form-create-channel">
+      <div class="form-group">
+        <label class="form-label" for="input-channel-name">Channel Name</label>
+        <input class="form-input" type="text" id="input-channel-name"
+               placeholder="general" required maxlength="64" />
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary"
+                data-close-modal="modal-create-channel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Channel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Invite management -->
+<div class="modal-overlay hidden" id="modal-invites"
+     role="dialog" aria-modal="true" aria-labelledby="lbl-invites">
+  <div class="modal">
+    <div class="modal-title" id="lbl-invites">Invite People</div>
+    <div class="modal-subtitle">
+      Share a link or code so others can join this server.
+    </div>
+
+    <!-- Generate new invite buttons -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button class="btn btn-primary" id="btn-create-public-invite" style="flex:1;">
+        🔗 New Public Link
+      </button>
+      <button class="btn btn-ghost" id="btn-create-short-invite" style="flex:1;">
+        🔑 New One-Time Code
+      </button>
+    </div>
+
+    <!-- List of existing invites (filled by app.js) -->
+    <div id="invite-list-container">
+      <div class="loading">Loading invites…</div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary"
+              data-close-modal="modal-invites">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SCRIPTS
+═══════════════════════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+</body>
+</html>

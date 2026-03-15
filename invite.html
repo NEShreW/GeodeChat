@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeodeChat — Join Server</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+
+<div class="invite-page">
+  <div class="invite-card">
+
+    <!-- Spinner shown while verifying the invite -->
+    <div id="state-loading">
+      <div class="spinner"></div>
+      <p>Checking invite…</p>
+    </div>
+
+    <!-- Invalid or expired invite -->
+    <div id="state-invalid" class="hidden">
+      <div style="font-size:52px;margin-bottom:16px;">❌</div>
+      <h2>Invalid Invite</h2>
+      <p id="invalid-msg">This invite link is invalid or has expired.</p>
+      <a href="app.html" class="btn btn-primary" style="display:inline-block;margin-top:20px;">
+        Go to GeodeChat
+      </a>
+    </div>
+
+    <!-- Valid invite — user is NOT logged in -->
+    <div id="state-auth" class="hidden">
+      <div class="invite-guild-icon" id="auth-guild-icon">G</div>
+      <p>You've been invited to join</p>
+      <div class="guild-name" id="auth-guild-name">Server</div>
+      <p>Sign in or create an account to accept this invite.</p>
+      <!-- Redirect to login, passing the code so invite.html can re-run after OAuth -->
+      <a id="btn-go-login" href="index.html"
+         class="btn btn-primary btn-full" style="display:block;margin-top:20px;">
+        Log In / Sign Up
+      </a>
+    </div>
+
+    <!-- Valid invite — user IS logged in, ready to accept -->
+    <div id="state-ready" class="hidden">
+      <div class="invite-guild-icon" id="ready-guild-icon">G</div>
+      <p>You've been invited to join</p>
+      <div class="guild-name" id="ready-guild-name">Server</div>
+      <button class="btn btn-primary btn-full" id="btn-accept"
+              style="margin-top:20px;">Accept Invite</button>
+    </div>
+
+    <!-- User is already a member -->
+    <div id="state-member" class="hidden">
+      <div style="font-size:52px;margin-bottom:16px;">✅</div>
+      <h2>Already a Member</h2>
+      <p id="member-guild-name">You're already in this server.</p>
+      <a href="app.html" class="btn btn-primary" style="display:inline-block;margin-top:20px;">
+        Open GeodeChat
+      </a>
+    </div>
+
+    <!-- Successfully joined -->
+    <div id="state-success" class="hidden">
+      <div style="font-size:52px;margin-bottom:16px;">🎉</div>
+      <h2>You joined!</h2>
+      <p id="success-guild-name">Welcome to the server!</p>
+      <a href="app.html" class="btn btn-primary" style="display:inline-block;margin-top:20px;">
+        Open GeodeChat
+      </a>
+    </div>
+
+  </div><!-- /.invite-card -->
+</div><!-- /.invite-page -->
+
+<!-- Supabase JS v2 via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ─────────────────────────────────────────
+// CONFIG  ← replace with your Supabase project values
+// ─────────────────────────────────────────
+const SUPABASE_URL      = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ─────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────
+
+/** Show one named state panel and hide all others. */
+function showState(name) {
+  const ids = ['state-loading','state-invalid','state-auth','state-ready','state-member','state-success'];
+  for (const id of ids) {
+    document.getElementById(id)?.classList.toggle('hidden', id !== `state-${name}`);
+  }
+}
+
+/** Derive a stable accent colour from an arbitrary string (guild id / name). */
+function guildColor(str) {
+  const palette = ['#5865f2','#57f287','#faa81a','#eb459e','#ed4245','#1abc9c'];
+  let h = 0;
+  for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) & 0x7fffffff;
+  return palette[h % palette.length];
+}
+
+/** Get 1-2 initials from a guild name. */
+function initials(name) {
+  if (!name) return '?';
+  const w = name.trim().split(/\s+/);
+  return (w.length >= 2 ? w[0][0] + w[w.length - 1][0] : name.slice(0, 2)).toUpperCase();
+}
+
+/** Parse the invite code from the current page URL (?code=...). */
+function getCodeFromUrl() {
+  return new URLSearchParams(window.location.search).get('code')?.trim() ?? null;
+}
+
+// ─────────────────────────────────────────
+// POPULATE GUILD ICON + NAME
+// ─────────────────────────────────────────
+function renderGuildInfo(iconId, nameId, guildName, guildId) {
+  const icon = document.getElementById(iconId);
+  const name = document.getElementById(nameId);
+  if (icon) {
+    icon.textContent    = initials(guildName);
+    icon.style.background = guildColor(guildId ?? guildName);
+  }
+  if (name) name.textContent = guildName;
+}
+
+// ─────────────────────────────────────────
+// MAIN FLOW
+// ─────────────────────────────────────────
+(async () => {
+  const code = getCodeFromUrl();
+
+  if (!code) {
+    document.getElementById('invalid-msg').textContent = 'No invite code found in the URL.';
+    showState('invalid');
+    return;
+  }
+
+  // 1. Verify the invite code (publicly, without needing membership)
+  const { data: info, error: infoErr } = await sb.rpc('get_invite_info', { invite_code: code });
+  if (infoErr || info?.error) {
+    document.getElementById('invalid-msg').textContent =
+      info?.error ?? infoErr?.message ?? 'Invalid invite.';
+    showState('invalid');
+    return;
+  }
+
+  const guildId   = info.guild_id;
+  const guildName = info.guild_name ?? 'Unknown Server';
+
+  // 2. Check auth state
+  const { data: { session } } = await sb.auth.getSession();
+
+  if (!session) {
+    // Not logged in — show prompt to log in first.
+    // After login, index.html → app.html. The user can paste the invite code there,
+    // or we store the code in sessionStorage so invite.html can auto-redeem on return.
+    sessionStorage.setItem('pendingInviteCode', code);
+
+    renderGuildInfo('auth-guild-icon', 'auth-guild-name', guildName, guildId);
+    // Preserve the code in the login redirect so the page can be revisited
+    document.getElementById('btn-go-login').href =
+      `index.html?next=${encodeURIComponent(window.location.href)}`;
+    showState('auth');
+    return;
+  }
+
+  // 3. Logged-in — show "Accept Invite" button
+  renderGuildInfo('ready-guild-icon', 'ready-guild-name', guildName, guildId);
+  showState('ready');
+
+  document.getElementById('btn-accept').addEventListener('click', async () => {
+    document.getElementById('btn-accept').disabled    = true;
+    document.getElementById('btn-accept').textContent = 'Joining…';
+
+    const { data: result, error: redeemErr } = await sb.rpc('redeem_invite', { invite_code: code });
+
+    if (redeemErr) {
+      document.getElementById('invalid-msg').textContent = redeemErr.message;
+      showState('invalid');
+      return;
+    }
+
+    if (result?.error) {
+      if (result.error === 'Already a member') {
+        document.getElementById('member-guild-name').textContent =
+          `You're already in "${guildName}".`;
+        showState('member');
+      } else {
+        document.getElementById('invalid-msg').textContent = result.error;
+        showState('invalid');
+      }
+      return;
+    }
+
+    // Success
+    document.getElementById('success-guild-name').textContent =
+      `Welcome to "${guildName}"!`;
+    showState('success');
+
+    // Clear any pending invite stored in sessionStorage
+    sessionStorage.removeItem('pendingInviteCode');
+  });
+
+  // Auto-redeem if the page was reached after an OAuth redirect (code in sessionStorage)
+  if (sessionStorage.getItem('pendingInviteCode') === code) {
+    document.getElementById('btn-accept')?.click();
+  }
+})();
+</script>
+</body>
+</html>
