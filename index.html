@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeodeChat — Sign In</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+
+<div class="auth-page">
+  <div class="auth-card">
+
+    <!-- Logo -->
+    <div class="auth-logo">
+      <h1>💬 GeodeChat</h1>
+      <p>A Discord-like chat for everyone</p>
+    </div>
+
+    <!-- Tab switcher -->
+    <div class="auth-tabs" role="tablist">
+      <div class="auth-tab active" role="tab" id="tab-login"
+           tabindex="0" aria-selected="true" aria-controls="panel-login">Log In</div>
+      <div class="auth-tab" role="tab" id="tab-signup"
+           tabindex="0" aria-selected="false" aria-controls="panel-signup">Sign Up</div>
+    </div>
+
+    <!-- Error banner (shared) -->
+    <div id="auth-error" class="form-error hidden" role="alert"></div>
+
+    <!-- ── Log-in form ── -->
+    <form id="form-login" role="tabpanel" aria-labelledby="tab-login">
+      <div class="form-group">
+        <label class="form-label" for="login-email">Email</label>
+        <input class="form-input" type="email" id="login-email" name="email"
+               placeholder="you@example.com" required autocomplete="email" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="login-password">Password</label>
+        <input class="form-input" type="password" id="login-password" name="password"
+               placeholder="••••••••" required autocomplete="current-password" />
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="btn-login">Log In</button>
+    </form>
+
+    <!-- ── Sign-up form (hidden by default) ── -->
+    <form id="form-signup" class="hidden" role="tabpanel" aria-labelledby="tab-signup">
+      <div class="form-group">
+        <label class="form-label" for="signup-username">Username</label>
+        <input class="form-input" type="text" id="signup-username" name="username"
+               placeholder="CoolUser42" required minlength="2" maxlength="32"
+               autocomplete="username" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="signup-email">Email</label>
+        <input class="form-input" type="email" id="signup-email" name="email"
+               placeholder="you@example.com" required autocomplete="email" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="signup-password">Password</label>
+        <input class="form-input" type="password" id="signup-password" name="password"
+               placeholder="At least 8 characters" required minlength="8"
+               autocomplete="new-password" />
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="btn-signup">Create Account</button>
+    </form>
+
+    <!-- Divider -->
+    <div class="auth-divider"><span>or</span></div>
+
+    <!-- Google OAuth -->
+    <button type="button" class="btn-google" id="btn-google">
+      <!-- Google "G" logo (official SVG) -->
+      <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        <path fill="none" d="M0 0h48v48H0z"/>
+      </svg>
+      Continue with Google
+    </button>
+
+    <div class="auth-footer">
+      By continuing you agree to GeodeChat's terms of service.
+    </div>
+
+  </div><!-- /.auth-card -->
+</div><!-- /.auth-page -->
+
+<!-- Supabase JS v2 via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ─────────────────────────────────────────
+// CONFIG  ← replace with your Supabase project values
+// ─────────────────────────────────────────
+const SUPABASE_URL      = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ─────────────────────────────────────────
+// ELEMENTS
+// ─────────────────────────────────────────
+const tabLogin    = document.getElementById('tab-login');
+const tabSignup   = document.getElementById('tab-signup');
+const formLogin   = document.getElementById('form-login');
+const formSignup  = document.getElementById('form-signup');
+const authError   = document.getElementById('auth-error');
+
+// ─────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────
+function showError(msg) {
+  authError.textContent = msg;
+  authError.classList.remove('hidden');
+}
+function clearError() {
+  authError.textContent = '';
+  authError.classList.add('hidden');
+}
+
+// ─────────────────────────────────────────
+// REDIRECT IF ALREADY LOGGED IN
+// ─────────────────────────────────────────
+(async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) window.location.href = 'app.html';
+})();
+
+// ─────────────────────────────────────────
+// TAB SWITCHING
+// ─────────────────────────────────────────
+tabLogin.addEventListener('click', () => {
+  tabLogin.classList.add('active');
+  tabSignup.classList.remove('active');
+  formLogin.classList.remove('hidden');
+  formSignup.classList.add('hidden');
+  clearError();
+});
+tabSignup.addEventListener('click', () => {
+  tabSignup.classList.add('active');
+  tabLogin.classList.remove('active');
+  formSignup.classList.remove('hidden');
+  formLogin.classList.add('hidden');
+  clearError();
+});
+
+// ─────────────────────────────────────────
+// LOG IN  (email + password)
+// ─────────────────────────────────────────
+formLogin.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const btn      = document.getElementById('btn-login');
+
+  btn.disabled    = true;
+  btn.textContent = 'Logging in…';
+
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) {
+    showError(error.message);
+    btn.disabled    = false;
+    btn.textContent = 'Log In';
+  } else {
+    window.location.href = 'app.html';
+  }
+});
+
+// ─────────────────────────────────────────
+// SIGN UP  (email + password + username)
+// ─────────────────────────────────────────
+formSignup.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+
+  const username = document.getElementById('signup-username').value.trim();
+  const email    = document.getElementById('signup-email').value.trim();
+  const password = document.getElementById('signup-password').value;
+  const btn      = document.getElementById('btn-signup');
+
+  btn.disabled    = true;
+  btn.textContent = 'Creating account…';
+
+  // Store username in user metadata so app.js can read it on first login
+  const { data, error } = await sb.auth.signUp({
+    email,
+    password,
+    options: { data: { username } },
+  });
+
+  if (error) {
+    showError(error.message);
+    btn.disabled    = false;
+    btn.textContent = 'Create Account';
+    return;
+  }
+
+  if (data.session) {
+    // No email confirmation required — create profile and go
+    await sb.from('profiles').insert({ id: data.user.id, username });
+    window.location.href = 'app.html';
+  } else {
+    // Email confirmation is enabled in Supabase — user must confirm first
+    clearError();
+    authError.style.color = 'var(--success)';
+    showError('Almost there! Check your email to confirm your account, then log in.');
+    btn.disabled    = false;
+    btn.textContent = 'Create Account';
+  }
+});
+
+// ─────────────────────────────────────────
+// GOOGLE OAUTH
+// ─────────────────────────────────────────
+document.getElementById('btn-google').addEventListener('click', async () => {
+  clearError();
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      // After Google redirects back, land on app.html
+      redirectTo: window.location.origin +
+                  window.location.pathname.replace(/\/[^/]*$/, '') + '/app.html',
+    },
+  });
+  if (error) showError(error.message);
+});
+
+// ─────────────────────────────────────────
+// AUTH STATE CHANGE — catch OAuth callback redirect
+// ─────────────────────────────────────────
+sb.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_IN' && session) {
+    window.location.href = 'app.html';
+  }
+});
+</script>
+</body>
+</html>
