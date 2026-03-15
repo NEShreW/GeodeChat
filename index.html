@@ -44,6 +44,9 @@
                placeholder="••••••••" required autocomplete="current-password" />
       </div>
       <button type="submit" class="btn btn-primary btn-full" id="btn-login">Log In</button>
+      <div style="text-align:right;margin-top:6px;">
+        <button type="button" id="btn-forgot-password" class="link-btn">Forgot password?</button>
+      </div>
     </form>
 
     <!-- ── Sign-up form (hidden by default) ── -->
@@ -70,6 +73,39 @@
 
     <!-- Divider -->
     <div class="auth-divider"><span>or</span></div>
+
+    <!-- ── Forgot-password panel (hidden by default) ── -->
+    <div id="panel-forgot" class="auth-panel hidden" role="region" aria-label="Reset password">
+      <h3 class="panel-title">Reset Password</h3>
+      <p class="panel-subtitle">Enter your email address and we'll send you a reset link.</p>
+      <div class="form-group">
+        <label class="form-label" for="forgot-email">Email</label>
+        <input class="form-input" type="email" id="forgot-email"
+               placeholder="you@example.com" autocomplete="email" />
+      </div>
+      <div id="forgot-msg" class="panel-msg hidden"></div>
+      <button type="button" class="btn btn-primary btn-full" id="btn-send-reset">
+        Send Reset Link
+      </button>
+      <button type="button" class="btn btn-secondary btn-full"
+              id="btn-back-from-forgot" style="margin-top:8px;">← Back to Log In</button>
+    </div>
+
+    <!-- ── New-password panel (shown on PASSWORD_RECOVERY event) ── -->
+    <div id="panel-reset" class="auth-panel hidden" role="region" aria-label="Set new password">
+      <h3 class="panel-title">Set a New Password</h3>
+      <p class="panel-subtitle">Choose a new password for your account.</p>
+      <div class="form-group">
+        <label class="form-label" for="new-password">New Password</label>
+        <input class="form-input" type="password" id="new-password"
+               placeholder="At least 8 characters" minlength="8"
+               autocomplete="new-password" />
+      </div>
+      <div id="reset-msg" class="panel-msg hidden"></div>
+      <button type="button" class="btn btn-primary btn-full" id="btn-update-password">
+        Update Password
+      </button>
+    </div>
 
     <!-- Google OAuth -->
     <button type="button" class="btn-google" id="btn-google">
@@ -342,8 +378,117 @@ document.getElementById('btn-google').addEventListener('click', async () => {
 // AUTH STATE CHANGE — catch OAuth callback redirect
 // ─────────────────────────────────────────
 sb.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_IN' && session) {
+  if (event === 'PASSWORD_RECOVERY') {
+    // User clicked the password-reset link in their email
+    showAuthPanel('panel-reset');
+  } else if (event === 'SIGNED_IN' && session) {
     window.location.href = getPostAuthRedirectUrl();
+  }
+});
+
+// ─────────────────────────────────────────
+// PANEL SWITCHER
+// ─────────────────────────────────────────
+
+/** Show one auth panel / form and hide all others. */
+function showAuthPanel(panelId) {
+  const allPanels = [
+    'form-login', 'form-signup',
+    'panel-forgot', 'panel-reset',
+  ];
+  for (const id of allPanels) {
+    document.getElementById(id)?.classList.toggle('hidden', id !== panelId);
+  }
+
+  // Hide tabs, divider and Google button when on a custom panel
+  const isMainFlow = (panelId === 'form-login' || panelId === 'form-signup');
+  document.querySelector('.auth-tabs')?.classList.toggle('hidden', !isMainFlow);
+  document.querySelector('.auth-divider')?.classList.toggle('hidden', !isMainFlow);
+  document.getElementById('btn-google')?.classList.toggle('hidden', !isMainFlow);
+  document.getElementById('btn-resend-confirm')?.classList.toggle('hidden', true);
+  clearError();
+}
+
+// ─────────────────────────────────────────
+// FORGOT PASSWORD FLOW
+// ─────────────────────────────────────────
+
+document.getElementById('btn-forgot-password')?.addEventListener('click', () => {
+  showAuthPanel('panel-forgot');
+});
+
+document.getElementById('btn-back-from-forgot')?.addEventListener('click', () => {
+  showAuthPanel('form-login');
+  tabLogin.classList.add('active');
+  tabSignup.classList.remove('active');
+});
+
+document.getElementById('btn-send-reset')?.addEventListener('click', async () => {
+  const email = document.getElementById('forgot-email').value.trim();
+  const msgEl = document.getElementById('forgot-msg');
+  const btn   = document.getElementById('btn-send-reset');
+  msgEl.classList.add('hidden');
+
+  if (!email) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = 'Please enter your email address.';
+    msgEl.classList.remove('hidden');
+    return;
+  }
+
+  btn.disabled    = true;
+  btn.textContent = 'Sending…';
+
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}${getBasePath()}/index.html`,
+  });
+
+  btn.disabled    = false;
+  btn.textContent = 'Send Reset Link';
+
+  if (error) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = formatAuthMessage(error.message);
+  } else {
+    msgEl.style.color = 'var(--success)';
+    msgEl.textContent = 'Check your email for a password reset link!';
+  }
+  msgEl.classList.remove('hidden');
+});
+
+// ─────────────────────────────────────────
+// PASSWORD RESET (after clicking email link)
+// ─────────────────────────────────────────
+
+document.getElementById('btn-update-password')?.addEventListener('click', async () => {
+  const password = document.getElementById('new-password').value;
+  const msgEl    = document.getElementById('reset-msg');
+  const btn      = document.getElementById('btn-update-password');
+  msgEl.classList.add('hidden');
+
+  if (password.length < 8) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = 'Password must be at least 8 characters.';
+    msgEl.classList.remove('hidden');
+    return;
+  }
+
+  btn.disabled    = true;
+  btn.textContent = 'Updating…';
+
+  const { error } = await sb.auth.updateUser({ password });
+
+  if (error) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = error.message;
+    msgEl.classList.remove('hidden');
+    btn.disabled    = false;
+    btn.textContent = 'Update Password';
+  } else {
+    msgEl.style.color = 'var(--success)';
+    msgEl.textContent = 'Password updated! Redirecting…';
+    msgEl.classList.remove('hidden');
+    setTimeout(() => { window.location.href = getAppRedirectUrl(); }, 1500);
   }
 });
 </script>

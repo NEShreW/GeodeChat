@@ -58,6 +58,11 @@ const state = {
   members:      [],     // guild_members rows for activeGuild
   profileCache: {},     // { userId: { id, username } } — avoid repeat fetches
   realtimeSub:  null,   // active Supabase Realtime channel subscription
+  memberSub:    null,   // Supabase Realtime subscription for guild_members
+  messageCursor: null,  // created_at of the oldest loaded message (for pagination)
+  hasMoreMessages: false, // whether older messages exist to load
+  loadingMore:  false,  // prevents concurrent loadMoreMessages() calls
+  _memberDebounce: null, // debounce timer for member list reloads
 };
 
 // ─────────────────────────────────────────
@@ -291,6 +296,7 @@ async function loadGuilds() {
     // No guilds — show a welcome prompt
     state.activeGuild  = null;
     state.activeChannel = null;
+    unsubscribeFromMembers();
     renderGuildHeader();
     document.getElementById('channel-list').innerHTML = '';
     document.getElementById('member-list').innerHTML  = '';
@@ -320,6 +326,7 @@ async function selectGuild(guildId) {
   } else {
     renderEmptyChat();
   }
+  subscribeToMembers(guildId);
 }
 
 /**
@@ -354,6 +361,7 @@ async function leaveGuild(guildId) {
     .eq('user_id', state.user.id);
   if (error) { toast('Failed to leave server: ' + error.message, 'error'); return; }
   toast('Left the server.', 'success');
+  unsubscribeFromMembers();
   state.activeGuild = null;
   await loadGuilds();
 }
@@ -363,6 +371,7 @@ async function deleteGuild(guildId) {
   const { error } = await sb.from('guilds').delete().eq('id', guildId);
   if (error) { toast('Failed to delete server: ' + error.message, 'error'); return; }
   toast('Server deleted.', 'success');
+  unsubscribeFromMembers();
   state.activeGuild = null;
   await loadGuilds();
 }
@@ -405,6 +414,10 @@ async function selectChannel(channelId) {
   renderChatHeader();
   await loadMessages(channelId);
   subscribeToChannel(channelId);
+
+  // Close mobile sidebar when a channel is chosen
+  document.querySelector('.channel-sidebar')?.classList.remove('open');
+  document.getElementById('sidebar-backdrop')?.classList.remove('visible');
 }
 
 /** Create a text channel in the active guild (owner / admin only). */
@@ -442,7 +455,78 @@ async function loadMessages(channelId) {
 
   // Pre-fetch display names for all authors
   await fetchProfiles(state.messages.map((m) => m.user_id));
+  state.messageCursor  = state.messages[0]?.created_at ?? null;
+  state.hasMoreMessages = (data?.length ?? 0) >= 50;
   renderMessages();
+  renderLoadMoreBtn();
+}
+
+/** Load messages older than the current cursor and prepend them. */
+async function loadMoreMessages() {
+  if (!state.activeChannel || !state.messageCursor || state.loadingMore) return;
+  state.loadingMore = true;
+
+  const btn = document.getElementById('load-more-btn');
+  if (btn) btn.textContent = 'Loading…';
+
+  const { data, error } = await sb
+    .from('messages')
+    .select('id, user_id, content, created_at')
+    .eq('channel_id', state.activeChannel.id)
+    .lt('created_at', state.messageCursor)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  state.loadingMore = false;
+
+  if (error) {
+    toast('Failed to load older messages: ' + error.message, 'error');
+    renderLoadMoreBtn();
+    return;
+  }
+
+  const older = (data ?? []).reverse();
+  state.hasMoreMessages = older.length >= 50;
+
+  if (older.length === 0) {
+    renderLoadMoreBtn();
+    return;
+  }
+
+  await fetchProfiles(older.map((m) => m.user_id));
+  state.messageCursor = older[0].created_at;
+  state.messages = [...older, ...state.messages];
+
+  // Preserve distance-from-bottom so the view doesn't jump
+  const container = document.getElementById('messages-container');
+  const distFromBottom = container
+    ? container.scrollHeight - container.scrollTop - container.clientHeight
+    : 0;
+
+  renderMessages(/* noScroll */ true);
+  renderLoadMoreBtn();
+
+  if (container) {
+    container.scrollTop = container.scrollHeight - container.clientHeight - distFromBottom;
+  }
+}
+
+/** Add or remove the "Load earlier messages" button at the top of the message list. */
+function renderLoadMoreBtn() {
+  const container = document.getElementById('messages-container');
+  if (!container) return;
+
+  const existing = document.getElementById('load-more-btn');
+  if (existing) existing.remove();
+
+  if (!state.hasMoreMessages) return;
+
+  const el = document.createElement('button');
+  el.id        = 'load-more-btn';
+  el.className = 'load-more-btn';
+  el.textContent = '↑ Load earlier messages';
+  el.addEventListener('click', () => loadMoreMessages());
+  container.insertBefore(el, container.firstChild);
 }
 
 /** Insert a new message row. The realtime subscription will display it. */
@@ -483,6 +567,21 @@ function subscribeToChannel(channelId) {
             container.scrollHeight - container.scrollTop - container.clientHeight < AUTO_SCROLL_THRESHOLD_PX;
           if (nearBottom) container.scrollTop = container.scrollHeight;
         }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event:  'DELETE',
+        schema: 'public',
+        table:  'messages',
+        filter: `channel_id=eq.${channelId}`,
+      },
+      (payload) => {
+        const msgId = payload.old?.id;
+        if (!msgId) return;
+        state.messages = state.messages.filter((m) => m.id !== msgId);
+        document.querySelector(`[data-message-id="${CSS.escape(msgId)}"]`)?.remove();
       }
     )
     .subscribe();
@@ -607,6 +706,62 @@ async function deleteInvite(code) {
   return true;
 }
 
+/** Delete a message by ID (own messages; admins/owners can delete any). */
+async function deleteMessage(messageId) {
+  const { error } = await sb.from('messages').delete().eq('id', messageId);
+  if (error) toast('Could not delete message: ' + error.message, 'error');
+}
+
+/** Delete a channel by ID (owner / admin only). */
+async function deleteChannel(channelId) {
+  if (!state.activeGuild) return;
+  const channel = state.channels.find((c) => c.id === channelId);
+  if (!channel) return;
+  if (!confirm(`Delete #${channel.name}? This cannot be undone.`)) return;
+
+  const { error } = await sb.from('channels').delete().eq('id', channelId);
+  if (error) { toast('Failed to delete channel: ' + error.message, 'error'); return; }
+  toast(`Channel #${channel.name} deleted.`, 'success');
+
+  if (state.activeChannel?.id === channelId) {
+    unsubscribeFromChannel();
+    state.activeChannel = null;
+    state.messages      = [];
+    renderEmptyChat();
+  }
+  await loadChannels(state.activeGuild.id);
+}
+
+// ─────────────────────────────────────────
+// MEMBER REALTIME
+// ─────────────────────────────────────────
+
+/** Subscribe to guild_members changes so the member list stays live. */
+function subscribeToMembers(guildId) {
+  unsubscribeFromMembers();
+  state.memberSub = sb
+    .channel(`members:${guildId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'guild_members', filter: `guild_id=eq.${guildId}` },
+      () => {
+        // Debounce rapid updates (e.g. batch joins)
+        clearTimeout(state._memberDebounce);
+        state._memberDebounce = setTimeout(() => loadMembers(guildId), 400);
+      }
+    )
+    .subscribe();
+}
+
+/** Tear down the member Realtime subscription. */
+function unsubscribeFromMembers() {
+  clearTimeout(state._memberDebounce);
+  if (state.memberSub) {
+    sb.removeChannel(state.memberSub);
+    state.memberSub = null;
+  }
+}
+
 // ─────────────────────────────────────────
 // 13. UI RENDERING
 // ─────────────────────────────────────────
@@ -661,12 +816,24 @@ function renderChannelList() {
   label.textContent = 'Text Channels';
   list.appendChild(label);
 
+  const isPrivileged =
+    state.activeGuild?.role === 'owner' || state.activeGuild?.role === 'admin';
+
   for (const ch of state.channels) {
     const el = document.createElement('div');
     el.className        = 'channel-item' + (state.activeChannel?.id === ch.id ? ' active' : '');
     el.dataset.channelId = ch.id;
-    el.innerHTML        = `<span class="channel-prefix">#</span>${escapeHtml(ch.name)}`;
-    el.addEventListener('click', () => selectChannel(ch.id));
+    el.innerHTML =
+      `<span class="channel-prefix">#</span>` +
+      `<span class="channel-name-text">${escapeHtml(ch.name)}</span>` +
+      (isPrivileged
+        ? `<button class="channel-delete-btn" data-channel-id="${escapeHtml(ch.id)}"
+                   title="Delete #${escapeHtml(ch.name)}" aria-label="Delete channel">×</button>`
+        : '');
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.channel-delete-btn')) return; // handled by event delegation
+      selectChannel(ch.id);
+    });
     list.appendChild(el);
   }
 }
@@ -691,7 +858,7 @@ function renderChatHeader() {
 }
 
 /** Render all loaded messages from scratch. */
-function renderMessages() {
+function renderMessages(noScroll = false) {
   const container = document.getElementById('messages-container');
   if (!container) return;
   container.innerHTML = '';
@@ -706,8 +873,8 @@ function renderMessages() {
   for (let i = 0; i < state.messages.length; i++) {
     appendMessage(state.messages[i], state.messages[i - 1] ?? null, false);
   }
-  // Scroll to the bottom after initial render
-  container.scrollTop = container.scrollHeight;
+  // Scroll to the bottom after initial render (unless told not to)
+  if (!noScroll) container.scrollTop = container.scrollHeight;
 }
 
 /**
@@ -762,6 +929,22 @@ function appendMessage(msg, prevMsg = null, scrollToBottom = true) {
         <div class="message-text">${escapeHtml(msg.content)}</div>
       </div>
     `;
+  }
+
+  // Show a delete button for the message author and guild owners/admins
+  const canDelete =
+    msg.user_id === state.user?.id ||
+    state.activeGuild?.role === 'owner' ||
+    state.activeGuild?.role === 'admin';
+
+  if (canDelete) {
+    const ctrl = document.createElement('div');
+    ctrl.className = 'message-controls';
+    ctrl.innerHTML =
+      `<button class="msg-ctrl-btn msg-ctrl-delete"
+               data-msg-id="${escapeHtml(msg.id)}"
+               title="Delete message" aria-label="Delete message">🗑</button>`;
+    el.appendChild(ctrl);
   }
 
   container.appendChild(el);
@@ -1090,6 +1273,43 @@ function initEventListeners() {
   // ── Universal "data-close-modal" close buttons ──
   document.querySelectorAll('[data-close-modal]').forEach((btn) => {
     btn.addEventListener('click', () => hideModal(btn.dataset.closeModal));
+  });
+
+  // ── Mobile: hamburger opens / closes channel sidebar ──
+  document.getElementById('btn-hamburger')?.addEventListener('click', () => {
+    document.querySelector('.channel-sidebar')?.classList.toggle('open');
+    document.getElementById('sidebar-backdrop')?.classList.toggle('visible');
+  });
+  document.getElementById('sidebar-backdrop')?.addEventListener('click', () => {
+    document.querySelector('.channel-sidebar')?.classList.remove('open');
+    document.getElementById('sidebar-backdrop')?.classList.remove('visible');
+  });
+
+  // ── Message delete — event delegation on the messages container ──
+  document.getElementById('messages-container')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.msg-ctrl-delete');
+    if (!btn) return;
+    const msgId = btn.dataset.msgId;
+    if (msgId && confirm('Delete this message?')) {
+      await deleteMessage(msgId);
+    }
+  });
+
+  // ── Load older messages when scrolling near the top ──
+  document.getElementById('messages-container')?.addEventListener('scroll', () => {
+    const container = document.getElementById('messages-container');
+    if (!container) return;
+    if (container.scrollTop < 80 && state.hasMoreMessages && !state.loadingMore) {
+      loadMoreMessages();
+    }
+  });
+
+  // ── Channel delete — event delegation on the channel list ──
+  document.getElementById('channel-list')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.channel-delete-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    await deleteChannel(btn.dataset.channelId);
   });
 }
 

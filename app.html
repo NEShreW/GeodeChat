@@ -12,6 +12,9 @@
      MAIN APP — four-column Discord-like layout
      [ guild-bar | channel-sidebar | chat-area | member-list ]
 ═══════════════════════════════════════════════════════════ -->
+<!-- Backdrop overlay — tapping it closes the channel sidebar on mobile -->
+<div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+
 <div class="app">
 
   <!-- ─── GUILD BAR (leftmost — server icons) ─── -->
@@ -68,6 +71,9 @@
 
     <!-- Channel header -->
     <header class="chat-header">
+      <!-- Hamburger: only visible on mobile via CSS -->
+      <button class="icon-btn" id="btn-hamburger"
+              aria-label="Toggle channel list" style="display:none;">☰</button>
       <span class="channel-hash" aria-hidden="true">#</span>
       <span id="chat-channel-name">Select a channel</span>
     </header>

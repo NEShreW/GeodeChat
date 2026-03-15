@@ -839,3 +839,166 @@ input, textarea {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─────────────────────────────────────────
+   MESSAGE CONTROLS  (delete button on hover)
+   ───────────────────────────────────────── */
+.message { position: relative; }
+
+.message-controls {
+  position: absolute;
+  top: -12px;
+  right: 16px;
+  background: var(--bg-dark);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 4px;
+  display: none;
+  gap: 2px;
+  padding: 2px 4px;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+.message:hover .message-controls { display: flex; }
+
+.msg-ctrl-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+  transition: background .1s, color .1s;
+}
+.msg-ctrl-btn:hover           { background: var(--bg-hover); color: var(--text-primary); }
+.msg-ctrl-btn.msg-ctrl-delete:hover { background: var(--danger); color: #fff; }
+
+/* ─────────────────────────────────────────
+   CHANNEL DELETE BUTTON
+   ───────────────────────────────────────── */
+.channel-name-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.channel-delete-btn {
+  display: none;
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 17px;
+  line-height: 1;
+  border-radius: 3px;
+  flex-shrink: 0;
+  transition: color .1s, background .1s;
+}
+.channel-item:hover .channel-delete-btn { display: block; }
+.channel-delete-btn:hover { color: var(--danger); background: rgba(255,255,255,.05); }
+
+/* ─────────────────────────────────────────
+   LOAD MORE MESSAGES BUTTON
+   ───────────────────────────────────────── */
+.load-more-btn {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 8px 16px;
+  padding: 7px;
+  background: var(--bg-light);
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: background .1s, color .1s;
+}
+.load-more-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* ─────────────────────────────────────────
+   AUTH UTILITY — forgot / reset panels
+   ───────────────────────────────────────── */
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+  font-family: inherit;
+}
+.link-btn:hover { color: var(--accent-hover); text-decoration: underline; }
+
+.panel-title    { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+.panel-subtitle { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+
+.panel-msg {
+  font-size: 13px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 3px;
+  background: rgba(0,0,0,.2);
+}
+
+/* ─────────────────────────────────────────
+   SIDEBAR BACKDROP  (mobile overlay)
+   ───────────────────────────────────────── */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 490;
+}
+.sidebar-backdrop.visible { display: block; }
+
+/* ─────────────────────────────────────────
+   RESPONSIVE LAYOUT
+   ───────────────────────────────────────── */
+
+/* Tablet (≤960px): hide the member list */
+@media (max-width: 960px) {
+  .app {
+    grid-template-columns: var(--guild-bar-w) var(--channel-w) 1fr;
+  }
+  .member-list { display: none; }
+}
+
+/* Mobile (≤680px): channel sidebar as a slide-in drawer */
+@media (max-width: 680px) {
+  .app {
+    grid-template-columns: var(--guild-bar-w) 1fr;
+  }
+
+  .channel-sidebar {
+    position: fixed;
+    left: var(--guild-bar-w);
+    top: 0;
+    bottom: 0;
+    width: var(--channel-w);
+    z-index: 500;
+    transform: translateX(calc(-1 * var(--channel-w)));
+    transition: transform .2s ease;
+  }
+  .channel-sidebar.open {
+    transform: translateX(0);
+  }
+
+  /* Show the hamburger button in the chat header */
+  #btn-hamburger {
+    display: flex !important;
+  }
+
+  /* Give the chat header a bit more breathing room */
+  .chat-header {
+    padding: 0 12px;
+    gap: 6px;
+  }
+}
+
+/* Very small screens (≤400px): shrink guild bar */
+@media (max-width: 400px) {
+  :root { --guild-bar-w: 56px; }
+  .guild-icon, .guild-add-btn { width: 40px; height: 40px; font-size: 15px; }
+}

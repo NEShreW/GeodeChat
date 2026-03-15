@@ -231,6 +231,17 @@ create policy "messages: users can delete own messages"
   on messages for delete
   using (user_id = auth.uid());
 
+drop policy if exists "messages: owner/admin can delete in guild" on messages;
+create policy "messages: owner/admin can delete in guild"
+  on messages for delete
+  using (
+    exists (
+      select 1 from channels c
+      where c.id = channel_id
+        and guild_user_role(c.guild_id, auth.uid()) in ('owner', 'admin')
+    )
+  );
+
 
 -- ─────────────────────────────────────────
 -- RLS POLICIES — invites
@@ -403,3 +414,63 @@ begin
   return json_build_object('success', true, 'guild_id', inv.guild_id);
 end;
 $$;
+
+
+-- ─────────────────────────────────────────
+-- REALTIME PUBLICATION
+-- Add tables to the supabase_realtime publication so that
+-- Postgres → Supabase Realtime streaming works for these tables.
+-- Safe to re-run by checking membership first.
+-- ─────────────────────────────────────────
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'messages'
+  ) then
+    alter publication supabase_realtime add table messages;
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'guild_members'
+  ) then
+    alter publication supabase_realtime add table guild_members;
+  end if;
+end;
+$$;
+
+
+-- ─────────────────────────────────────────
+-- RLS POLICY — guild_members: role updates
+-- Allow owners to promote/demote members; admins can demote to 'member' only.
+-- ─────────────────────────────────────────
+drop policy if exists "guild_members: owner/admin can update roles" on guild_members;
+create policy "guild_members: owner/admin can update roles"
+  on guild_members for update
+  using  (guild_user_role(guild_id, auth.uid()) in ('owner', 'admin')
+          and user_id != auth.uid())   -- cannot change own role
+  with check (
+    (guild_user_role(guild_id, auth.uid()) = 'owner' and role in ('admin', 'member'))
+    or (guild_user_role(guild_id, auth.uid()) = 'admin' and role = 'member')
+  );
+
+
+-- ─────────────────────────────────────────
+-- REPLICA IDENTITY for realtime DELETE events
+-- Without REPLICA IDENTITY FULL the DELETE payload only contains the primary
+-- key (id). That is sufficient for our client-side removal by id.
+-- If you also need the full old row in DELETE payloads, uncomment the lines below:
+-- alter table messages      replica identity full;
+-- alter table guild_members replica identity full;
+-- ─────────────────────────────────────────
