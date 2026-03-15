@@ -29,6 +29,9 @@
 const SUPABASE_URL      = 'https://fbhdumewgmzfacdyhrgi.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZiaGR1bWV3Z216ZmFjZHlocmdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1OTgzMzIsImV4cCI6MjA4OTE3NDMzMn0.eO41IL6xC3hokzMOWXBbGVP1yNDoOl7woiBgpdBjmm4';
 
+// Marker used by app.html startup watchdog.
+window.__GEODE_APP_JS_LOADED = true;
+
 
 // One-time invite time-to-live (default: 1 hour)
 const SHORT_INVITE_TTL_MS = 60 * 60 * 1000;

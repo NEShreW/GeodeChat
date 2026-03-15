@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GeodeChat</title>
-  <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="/app.css?v=20260315-1" />
 </head>
 <body>
 
@@ -275,12 +275,27 @@
                  e.textContent='Failed to load Supabase SDK from CDN. Check your internet connection and reload.';
                  e.style.display='block';">
 </script>
-<script src="app.js"
+<script src="/app.js?v=20260315-2"
         onerror="document.getElementById('app-splash-spinner').style.display='none';
                  document.getElementById('app-splash-msg').textContent='';
                  var e=document.getElementById('app-splash-error');
                  e.textContent='Failed to load app.js. Make sure the file is deployed and accessible.';
                  e.style.display='block';">
+</script>
+<script>
+  // If app.js never runs (often stale cache), surface recovery guidance.
+  window.setTimeout(function () {
+    if (window.__GEODE_APP_JS_LOADED) return;
+    var spinner = document.getElementById('app-splash-spinner');
+    var msg = document.getElementById('app-splash-msg');
+    var err = document.getElementById('app-splash-error');
+    if (spinner) spinner.style.display = 'none';
+    if (msg) msg.textContent = '';
+    if (err) {
+      err.textContent = 'Startup did not complete. Hard refresh (Ctrl+Shift+R) to clear stale cache, then try again.';
+      err.style.display = 'block';
+    }
+  }, 5000);
 </script>
 </body>
 </html>
