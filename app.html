@@ -277,7 +277,30 @@
     script.async = false;
 
     script.onload = () => {
-      if (errorEl) errorEl.classList.add('hidden');
+      const startedAt = Date.now();
+
+      function verifyInit() {
+        const boot = window.__GEODE_APP_BOOT;
+
+        if (boot?.status === 'ready') {
+          if (errorEl) errorEl.classList.add('hidden');
+          return;
+        }
+
+        if (boot?.status === 'error') {
+          showBootError(`app.js loaded but failed to initialize: ${boot.error || 'Unknown error'}`);
+          return;
+        }
+
+        if (Date.now() - startedAt > 6000) {
+          showBootError('app.js loaded but startup did not complete. Check console errors and Supabase configuration.');
+          return;
+        }
+
+        setTimeout(verifyInit, 250);
+      }
+
+      setTimeout(verifyInit, 100);
     };
 
     script.onerror = () => {

@@ -39,10 +39,63 @@ const AUTO_SCROLL_THRESHOLD_PX = 120;
 // Consecutive messages from the same user within this window are visually grouped
 const MESSAGE_GROUP_THRESHOLD_MIN = 5;
 
+// Global startup state used by app.html bootloader diagnostics.
+window.__GEODE_APP_BOOT = {
+  status: 'loading',   // loading | ready | error
+  error:  '',
+  startedAt: Date.now(),
+};
+
+function setBootState(status, error = '') {
+  window.__GEODE_APP_BOOT = {
+    ...window.__GEODE_APP_BOOT,
+    status,
+    error: String(error || ''),
+    updatedAt: Date.now(),
+  };
+}
+
+function showFatalBootError(message) {
+  const text = String(message || 'Unknown startup error');
+  const errorEl = document.getElementById('app-boot-error');
+  if (errorEl) {
+    errorEl.textContent = text;
+    errorEl.classList.remove('hidden');
+  }
+  console.error('[GeodeChat bootstrap]', text);
+}
+
+window.addEventListener('error', (event) => {
+  if (window.__GEODE_APP_BOOT?.status === 'ready') return;
+  const msg = event?.error?.message || event?.message || 'Runtime error while starting app';
+  setBootState('error', msg);
+  showFatalBootError(`App startup error: ${msg}`);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  if (window.__GEODE_APP_BOOT?.status === 'ready') return;
+  const reason = event?.reason?.message || event?.reason || 'Unhandled promise rejection';
+  setBootState('error', String(reason));
+  showFatalBootError(`App startup error: ${reason}`);
+});
+
 // ─────────────────────────────────────────
 // 2. SUPABASE CLIENT
 // ─────────────────────────────────────────
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let sb = null;
+if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+  const msg = 'Supabase SDK is not available (window.supabase.createClient missing).';
+  setBootState('error', msg);
+  showFatalBootError(msg);
+} else {
+  try {
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (err) {
+    const msg = `Failed to initialize Supabase client: ${err?.message ?? String(err)}`;
+    setBootState('error', msg);
+    showFatalBootError(msg);
+  }
+}
 
 // ─────────────────────────────────────────
 // 3. APPLICATION STATE
@@ -251,18 +304,20 @@ async function signOut() {
 }
 
 // Listen for auth changes (token refresh, forced sign-out, OAuth callback)
-sb.auth.onAuthStateChange(async (event, session) => {
-  if (event === 'SIGNED_OUT') {
-    window.location.href = 'index.html';
-  } else if (event === 'SIGNED_IN' && session && !state.user) {
-    // OAuth redirect back to app.html — bootstrap the app
-    state.user = session.user;
-    await ensureProfile(session.user);
-    renderUserArea();
-    await loadGuilds();
-    await handlePendingInviteAfterLogin();
-  }
-});
+if (sb) {
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_OUT') {
+      window.location.href = 'index.html';
+    } else if (event === 'SIGNED_IN' && session && !state.user) {
+      // OAuth redirect back to app.html — bootstrap the app
+      state.user = session.user;
+      await ensureProfile(session.user);
+      renderUserArea();
+      await loadGuilds();
+      await handlePendingInviteAfterLogin();
+    }
+  });
+}
 
 // ─────────────────────────────────────────
 // 8. GUILDS
@@ -1318,8 +1373,16 @@ function initEventListeners() {
 // ─────────────────────────────────────────
 
 async function init() {
-  initEventListeners();
-  await initAuth();
+  if (!sb) return;
+  try {
+    initEventListeners();
+    await initAuth();
+    setBootState('ready');
+  } catch (err) {
+    const msg = err?.message ?? String(err);
+    setBootState('error', msg);
+    showFatalBootError(`App failed to initialize: ${msg}`);
+  }
 }
 
 init();
