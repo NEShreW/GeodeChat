@@ -27,6 +27,9 @@
 
     <!-- Error banner (shared) -->
     <div id="auth-error" class="form-error hidden" role="alert"></div>
+    <button type="button" id="btn-resend-confirm" class="btn btn-secondary btn-full hidden">
+      Resend confirmation email
+    </button>
 
     <!-- ── Log-in form ── -->
     <form id="form-login" role="tabpanel" aria-labelledby="tab-login">
@@ -107,6 +110,8 @@ const tabSignup   = document.getElementById('tab-signup');
 const formLogin   = document.getElementById('form-login');
 const formSignup  = document.getElementById('form-signup');
 const authError   = document.getElementById('auth-error');
+const resendBtn   = document.getElementById('btn-resend-confirm');
+let pendingSignupEmail = '';
 
 // ─────────────────────────────────────────
 // HELPERS
@@ -118,6 +123,19 @@ function showError(msg) {
 function clearError() {
   authError.textContent = '';
   authError.classList.add('hidden');
+}
+
+function hideResendButton() {
+  resendBtn.classList.add('hidden');
+}
+
+function showResendButton() {
+  resendBtn.classList.remove('hidden');
+}
+
+function getAppRedirectUrl() {
+  return window.location.origin +
+         window.location.pathname.replace(/\/[^/]*$/, '') + '/app.html';
 }
 
 // ─────────────────────────────────────────
@@ -137,6 +155,7 @@ tabLogin.addEventListener('click', () => {
   formLogin.classList.remove('hidden');
   formSignup.classList.add('hidden');
   clearError();
+  hideResendButton();
 });
 tabSignup.addEventListener('click', () => {
   tabSignup.classList.add('active');
@@ -144,6 +163,7 @@ tabSignup.addEventListener('click', () => {
   formSignup.classList.remove('hidden');
   formLogin.classList.add('hidden');
   clearError();
+  hideResendButton();
 });
 
 // ─────────────────────────────────────────
@@ -189,7 +209,10 @@ formSignup.addEventListener('submit', async (e) => {
   const { data, error } = await sb.auth.signUp({
     email,
     password,
-    options: { data: { username } },
+    options: {
+      data: { username },
+      emailRedirectTo: getAppRedirectUrl(),
+    },
   });
 
   if (error) {
@@ -205,12 +228,46 @@ formSignup.addEventListener('submit', async (e) => {
     window.location.href = 'app.html';
   } else {
     // Email confirmation is enabled in Supabase — user must confirm first
+    pendingSignupEmail = email;
     clearError();
     authError.style.color = 'var(--success)';
     showError('Almost there! Check your email to confirm your account, then log in.');
+    showResendButton();
     btn.disabled    = false;
     btn.textContent = 'Create Account';
   }
+});
+
+// ─────────────────────────────────────────
+// RESEND CONFIRMATION EMAIL
+// ─────────────────────────────────────────
+resendBtn.addEventListener('click', async () => {
+  if (!pendingSignupEmail) {
+    showError('Sign up first, then resend confirmation email.');
+    return;
+  }
+
+  resendBtn.disabled = true;
+  resendBtn.textContent = 'Resending…';
+
+  const { error } = await sb.auth.resend({
+    type: 'signup',
+    email: pendingSignupEmail,
+    options: {
+      emailRedirectTo: getAppRedirectUrl(),
+    },
+  });
+
+  if (error) {
+    authError.style.color = 'var(--danger)';
+    showError(error.message);
+  } else {
+    authError.style.color = 'var(--success)';
+    showError('Confirmation email resent. Check spam/junk if it is not in your inbox.');
+  }
+
+  resendBtn.disabled = false;
+  resendBtn.textContent = 'Resend confirmation email';
 });
 
 // ─────────────────────────────────────────
@@ -222,8 +279,7 @@ document.getElementById('btn-google').addEventListener('click', async () => {
     provider: 'google',
     options: {
       // After Google redirects back, land on app.html
-      redirectTo: window.location.origin +
-                  window.location.pathname.replace(/\/[^/]*$/, '') + '/app.html',
+      redirectTo: getAppRedirectUrl(),
     },
   });
   if (error) showError(error.message);
