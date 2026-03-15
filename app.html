@@ -242,6 +242,54 @@
      SCRIPTS
 ═══════════════════════════════════════════════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js"></script>
+<div id="app-boot-error" class="form-error hidden"
+     style="position:fixed;top:12px;left:12px;right:12px;z-index:99999;
+            background:#3a1f24;border:1px solid rgba(243,139,168,.45);
+            border-radius:6px;padding:10px 12px;color:#f38ba8;"></div>
+<script>
+// Bootloader: tries common paths for app.js and surfaces a clear error if loading fails.
+(function bootstrapAppScript() {
+  const errorEl = document.getElementById('app-boot-error');
+
+  function showBootError(message) {
+    if (!errorEl) return;
+    errorEl.textContent = message;
+    errorEl.classList.remove('hidden');
+  }
+
+  if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+    showBootError('Supabase library failed to load. Refresh the page and check your network/CSP settings.');
+    return;
+  }
+
+  const candidates = ['./app.js', 'app.js', '/app.js'];
+  let i = 0;
+
+  function tryLoadNext() {
+    if (i >= candidates.length) {
+      showBootError('Could not load app.js. Ensure app.js exists in the deployed site root and is publicly accessible.');
+      return;
+    }
+
+    const src = candidates[i++];
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+
+    script.onload = () => {
+      if (errorEl) errorEl.classList.add('hidden');
+    };
+
+    script.onerror = () => {
+      script.remove();
+      tryLoadNext();
+    };
+
+    document.body.appendChild(script);
+  }
+
+  tryLoadNext();
+})();
+</script>
 </body>
 </html>
