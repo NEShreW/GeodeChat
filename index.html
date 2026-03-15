@@ -138,6 +138,18 @@ function getAppRedirectUrl() {
          window.location.pathname.replace(/\/[^/]*$/, '') + '/app.html';
 }
 
+function isRateLimitError(error) {
+  const msg = String(error?.message ?? '').toLowerCase();
+  return msg.includes('rate limit') || msg.includes('too many requests') || msg.includes('429');
+}
+
+function switchToLoginTab() {
+  tabLogin.classList.add('active');
+  tabSignup.classList.remove('active');
+  formLogin.classList.remove('hidden');
+  formSignup.classList.add('hidden');
+}
+
 // ─────────────────────────────────────────
 // REDIRECT IF ALREADY LOGGED IN
 // ─────────────────────────────────────────
@@ -216,6 +228,27 @@ formSignup.addEventListener('submit', async (e) => {
   });
 
   if (error) {
+    if (isRateLimitError(error)) {
+      // If signup emails are throttled, try immediate password sign-in.
+      // This succeeds when the account already exists and is confirmed,
+      // allowing users to continue without waiting on another email.
+      const { error: loginError } = await sb.auth.signInWithPassword({ email, password });
+      if (!loginError) {
+        window.location.href = 'app.html';
+        return;
+      }
+
+      switchToLoginTab();
+      document.getElementById('login-email').value = email;
+      document.getElementById('login-password').value = password;
+      authError.style.color = 'var(--danger)';
+      showError('Email limit hit. Instant login was attempted but blocked. Try Google sign-in now, or disable "Confirm email" in Supabase for testing.');
+      btn.disabled    = false;
+      btn.textContent = 'Create Account';
+      return;
+    }
+
+    authError.style.color = 'var(--danger)';
     showError(error.message);
     btn.disabled    = false;
     btn.textContent = 'Create Account';
@@ -259,6 +292,14 @@ resendBtn.addEventListener('click', async () => {
   });
 
   if (error) {
+    if (isRateLimitError(error)) {
+      authError.style.color = 'var(--danger)';
+      showError('Resend limit reached. Use Google sign-in now, or wait and resend later.');
+      resendBtn.disabled = false;
+      resendBtn.textContent = 'Resend confirmation email';
+      return;
+    }
+
     authError.style.color = 'var(--danger)';
     showError(error.message);
   } else {
