@@ -144,9 +144,29 @@ function showResendButton() {
   resendBtn.classList.remove('hidden');
 }
 
+function getBasePath() {
+  return window.location.pathname.replace(/\/[^/]*$/, '');
+}
+
 function getAppRedirectUrl() {
-  return window.location.origin +
-         window.location.pathname.replace(/\/[^/]*$/, '') + '/app.html';
+  return `${window.location.origin}${getBasePath()}/app.html`;
+}
+
+function getSafeNextUrl() {
+  const raw = new URLSearchParams(window.location.search).get('next');
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw, window.location.origin);
+    if (url.origin !== window.location.origin) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+function getPostAuthRedirectUrl() {
+  return getSafeNextUrl() ?? getAppRedirectUrl();
 }
 
 function isRateLimitError(error) {
@@ -159,7 +179,7 @@ function isRateLimitError(error) {
 // ─────────────────────────────────────────
 (async () => {
   const { data: { session } } = await sb.auth.getSession();
-  if (session) window.location.href = 'app.html';
+  if (session) window.location.href = getPostAuthRedirectUrl();
 })();
 
 // ─────────────────────────────────────────
@@ -202,7 +222,7 @@ formLogin.addEventListener('submit', async (e) => {
     btn.disabled    = false;
     btn.textContent = 'Log In';
   } else {
-    window.location.href = 'app.html';
+    window.location.href = getPostAuthRedirectUrl();
   }
 });
 
@@ -250,7 +270,7 @@ formSignup.addEventListener('submit', async (e) => {
   if (data.session) {
     // No email confirmation required — create profile and go
     await sb.from('profiles').insert({ id: data.user.id, username });
-    window.location.href = 'app.html';
+    window.location.href = getPostAuthRedirectUrl();
   } else {
     // Email confirmation is enabled in Supabase — user must confirm first
     pendingSignupEmail = email;
@@ -311,8 +331,8 @@ document.getElementById('btn-google').addEventListener('click', async () => {
   const { error } = await sb.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      // After Google redirects back, land on app.html
-      redirectTo: getAppRedirectUrl(),
+      // After Google redirects back, land on the requested page when safe.
+      redirectTo: getPostAuthRedirectUrl(),
     },
   });
   if (error) showError(error.message);
@@ -323,7 +343,7 @@ document.getElementById('btn-google').addEventListener('click', async () => {
 // ─────────────────────────────────────────
 sb.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_IN' && session) {
-    window.location.href = 'app.html';
+    window.location.href = getPostAuthRedirectUrl();
   }
 });
 </script>

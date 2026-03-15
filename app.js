@@ -134,6 +134,14 @@ function extractCode(input) {
   return input.trim();
 }
 
+function getStoredPendingInviteCode() {
+  return sessionStorage.getItem('pendingInviteCode')?.trim() ?? '';
+}
+
+function clearPendingInviteCode() {
+  sessionStorage.removeItem('pendingInviteCode');
+}
+
 // ─────────────────────────────────────────
 // 5. MODAL HELPERS
 // ─────────────────────────────────────────
@@ -228,6 +236,7 @@ async function initAuth() {
   await ensureProfile(session.user);
   renderUserArea();
   await loadGuilds();
+  await handlePendingInviteAfterLogin();
 }
 
 /** Sign out and redirect to the login page. */
@@ -246,6 +255,7 @@ sb.auth.onAuthStateChange(async (event, session) => {
     await ensureProfile(session.user);
     renderUserArea();
     await loadGuilds();
+    await handlePendingInviteAfterLogin();
   }
 });
 
@@ -561,6 +571,33 @@ async function redeemInviteByCode(input) {
   const { data, error } = await sb.rpc('redeem_invite', { invite_code: code });
   if (error) return { error: error.message };
   return data; // { success, guild_id } or { error, guild_id? }
+}
+
+async function handlePendingInviteAfterLogin() {
+  const code = getStoredPendingInviteCode();
+  if (!code) return;
+
+  const result = await redeemInviteByCode(code);
+
+  if (result?.error === 'Already a member') {
+    clearPendingInviteCode();
+    toast('Invite already accepted.', 'info');
+    if (result.guild_id) await selectGuild(result.guild_id);
+    return;
+  }
+
+  if (result?.error) {
+    clearPendingInviteCode();
+    toast(`Invite could not be redeemed: ${result.error}`, 'error');
+    return;
+  }
+
+  clearPendingInviteCode();
+  if (result?.guild_id) {
+    await loadGuilds();
+    await selectGuild(result.guild_id);
+  }
+  toast('Joined server from invite.', 'success');
 }
 
 /** Delete an invite (owner / admin only). */
