@@ -117,12 +117,23 @@ let pendingSignupEmail = '';
 // HELPERS
 // ─────────────────────────────────────────
 function showError(msg) {
-  authError.textContent = msg;
+  authError.textContent = formatAuthMessage(msg);
   authError.classList.remove('hidden');
 }
 function clearError() {
   authError.textContent = '';
   authError.classList.add('hidden');
+}
+
+function formatAuthMessage(msg) {
+  const text = String(msg ?? 'Something went wrong. Please try again.');
+  const normalized = text.toLowerCase();
+
+  if (normalized.includes('email rate limit exceeded') || normalized.includes('rate limit') || normalized.includes('too many requests')) {
+    return 'Too many email attempts right now. Use Google sign-in, or try again shortly.';
+  }
+
+  return text;
 }
 
 function hideResendButton() {
