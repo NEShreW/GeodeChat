@@ -239,80 +239,48 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════
-     SCRIPTS
+     LOADING SPLASH — shown immediately; dismissed by app.js on success,
+     or replaced with an error message on failure.
 ═══════════════════════════════════════════════════════════ -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<div id="app-boot-error" class="form-error hidden"
-     style="position:fixed;top:12px;left:12px;right:12px;z-index:99999;
-            background:#3a1f24;border:1px solid rgba(243,139,168,.45);
-            border-radius:6px;padding:10px 12px;color:#f38ba8;"></div>
-<script>
-// Bootloader: tries common paths for app.js and surfaces a clear error if loading fails.
-(function bootstrapAppScript() {
-  const errorEl = document.getElementById('app-boot-error');
+<div id="app-splash" style="
+  position:fixed;inset:0;z-index:99999;
+  background:#202225;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:16px;color:#dcddde;font-family:system-ui,sans-serif;">
 
-  function showBootError(message) {
-    if (!errorEl) return;
-    errorEl.textContent = message;
-    errorEl.classList.remove('hidden');
-  }
+  <div id="app-splash-spinner" style="
+    width:36px;height:36px;border-radius:50%;
+    border:3px solid #40444b;border-top-color:#5865f2;
+    animation:splash-spin .7s linear infinite;">
+  </div>
+  <style>@keyframes splash-spin{to{transform:rotate(360deg)}}</style>
 
-  if (!window.supabase || typeof window.supabase.createClient !== 'function') {
-    showBootError('Supabase library failed to load. Refresh the page and check your network/CSP settings.');
-    return;
-  }
+  <div id="app-splash-msg" style="font-size:15px;color:#8e9297;">Starting GeodeChat…</div>
 
-  const candidates = ['./app.js', 'app.js', '/app.js'];
-  let i = 0;
+  <div id="app-splash-error" style="
+    display:none;max-width:480px;padding:14px 18px;margin-top:8px;
+    background:#3a1f24;border:1px solid rgba(243,139,168,.45);
+    border-radius:6px;font-size:13px;color:#f38ba8;text-align:center;line-height:1.5;">
+  </div>
+</div>
 
-  function tryLoadNext() {
-    if (i >= candidates.length) {
-      showBootError('Could not load app.js. Ensure app.js exists in the deployed site root and is publicly accessible.');
-      return;
-    }
-
-    const src = candidates[i++];
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = false;
-
-    script.onload = () => {
-      const startedAt = Date.now();
-
-      function verifyInit() {
-        const boot = window.__GEODE_APP_BOOT;
-
-        if (boot?.status === 'ready') {
-          if (errorEl) errorEl.classList.add('hidden');
-          return;
-        }
-
-        if (boot?.status === 'error') {
-          showBootError(`app.js loaded but failed to initialize: ${boot.error || 'Unknown error'}`);
-          return;
-        }
-
-        if (Date.now() - startedAt > 6000) {
-          showBootError('app.js loaded but startup did not complete. Check console errors and Supabase configuration.');
-          return;
-        }
-
-        setTimeout(verifyInit, 250);
-      }
-
-      setTimeout(verifyInit, 100);
-    };
-
-    script.onerror = () => {
-      script.remove();
-      tryLoadNext();
-    };
-
-    document.body.appendChild(script);
-  }
-
-  tryLoadNext();
-})();
+<!-- ═══════════════════════════════════════════════════════════
+     SCRIPTS  — Supabase first (synchronous), then app.js
+═══════════════════════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.2/dist/umd/supabase.js"
+        onerror="document.getElementById('app-splash-spinner').style.display='none';
+                 document.getElementById('app-splash-msg').textContent='';
+                 var e=document.getElementById('app-splash-error');
+                 e.textContent='Failed to load Supabase SDK from CDN. Check your internet connection and reload.';
+                 e.style.display='block';">
+</script>
+<script src="app.js"
+        onerror="document.getElementById('app-splash-spinner').style.display='none';
+                 document.getElementById('app-splash-msg').textContent='';
+                 var e=document.getElementById('app-splash-error');
+                 e.textContent='Failed to load app.js. Make sure the file is deployed and accessible.';
+                 e.style.display='block';">
 </script>
 </body>
 </html>

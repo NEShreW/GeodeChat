@@ -39,44 +39,37 @@ const AUTO_SCROLL_THRESHOLD_PX = 120;
 // Consecutive messages from the same user within this window are visually grouped
 const MESSAGE_GROUP_THRESHOLD_MIN = 5;
 
-// Global startup state used by app.html bootloader diagnostics.
-window.__GEODE_APP_BOOT = {
-  status: 'loading',   // loading | ready | error
-  error:  '',
-  startedAt: Date.now(),
-};
-
-function setBootState(status, error = '') {
-  window.__GEODE_APP_BOOT = {
-    ...window.__GEODE_APP_BOOT,
-    status,
-    error: String(error || ''),
-    updatedAt: Date.now(),
-  };
+// ─── Splash screen helpers ───────────────────────────────
+function splashMsg(text) {
+  const el = document.getElementById('app-splash-msg');
+  if (el) el.textContent = text;
+  console.log('[GeodeChat]', text);
 }
 
-function showFatalBootError(message) {
+function splashDone() {
+  const splash = document.getElementById('app-splash');
+  if (splash) splash.remove();
+}
+
+function splashError(message) {
   const text = String(message || 'Unknown startup error');
-  const errorEl = document.getElementById('app-boot-error');
-  if (errorEl) {
-    errorEl.textContent = text;
-    errorEl.classList.remove('hidden');
-  }
-  console.error('[GeodeChat bootstrap]', text);
+  const spinner = document.getElementById('app-splash-spinner');
+  const msg     = document.getElementById('app-splash-msg');
+  const errEl   = document.getElementById('app-splash-error');
+  if (spinner) spinner.style.display = 'none';
+  if (msg)     msg.textContent = '';
+  if (errEl)  { errEl.textContent = text; errEl.style.display = 'block'; }
+  console.error('[GeodeChat]', text);
 }
 
-window.addEventListener('error', (event) => {
-  if (window.__GEODE_APP_BOOT?.status === 'ready') return;
-  const msg = event?.error?.message || event?.message || 'Runtime error while starting app';
-  setBootState('error', msg);
-  showFatalBootError(`App startup error: ${msg}`);
+// Also catch any unhandled errors during startup
+window.addEventListener('error', (ev) => {
+  const msg = ev?.error?.message || ev?.message || 'Unknown runtime error';
+  splashError(`Startup error: ${msg}`);
 });
-
-window.addEventListener('unhandledrejection', (event) => {
-  if (window.__GEODE_APP_BOOT?.status === 'ready') return;
-  const reason = event?.reason?.message || event?.reason || 'Unhandled promise rejection';
-  setBootState('error', String(reason));
-  showFatalBootError(`App startup error: ${reason}`);
+window.addEventListener('unhandledrejection', (ev) => {
+  const reason = ev?.reason?.message || String(ev?.reason || 'Unknown promise rejection');
+  splashError(`Startup error: ${reason}`);
 });
 
 // ─────────────────────────────────────────
@@ -84,16 +77,13 @@ window.addEventListener('unhandledrejection', (event) => {
 // ─────────────────────────────────────────
 let sb = null;
 if (!window.supabase || typeof window.supabase.createClient !== 'function') {
-  const msg = 'Supabase SDK is not available (window.supabase.createClient missing).';
-  setBootState('error', msg);
-  showFatalBootError(msg);
+  splashError('Supabase SDK failed to load. Check your internet connection and reload the page.');
 } else {
   try {
     sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    splashMsg('Connecting…');
   } catch (err) {
-    const msg = `Failed to initialize Supabase client: ${err?.message ?? String(err)}`;
-    setBootState('error', msg);
-    showFatalBootError(msg);
+    splashError(`Failed to initialize Supabase: ${err?.message ?? String(err)}`);
   }
 }
 
@@ -284,16 +274,25 @@ function getDisplayName(userId) {
 
 /** Initialise the app after confirming the user is authenticated. */
 async function initAuth() {
-  const { data: { session } } = await sb.auth.getSession();
+  splashMsg('Checking session…');
+  const { data, error: sessionError } = await sb.auth.getSession();
+  if (sessionError) {
+    splashError(`Session error: ${sessionError.message}`);
+    return;
+  }
+  const session = data?.session;
   if (!session) {
-    // Not logged in — send to login page
+    splashMsg('Redirecting to login…');
     window.location.href = 'index.html';
     return;
   }
+  splashMsg('Loading profile…');
   state.user = session.user;
   await ensureProfile(session.user);
   renderUserArea();
+  splashMsg('Loading servers…');
   await loadGuilds();
+  splashDone();
   await handlePendingInviteAfterLogin();
 }
 
@@ -310,9 +309,11 @@ if (sb) {
       window.location.href = 'index.html';
     } else if (event === 'SIGNED_IN' && session && !state.user) {
       // OAuth redirect back to app.html — bootstrap the app
+      splashMsg('Signing you in…');
       state.user = session.user;
       await ensureProfile(session.user);
       renderUserArea();
+      splashDone();
       await loadGuilds();
       await handlePendingInviteAfterLogin();
     }
@@ -1373,15 +1374,12 @@ function initEventListeners() {
 // ─────────────────────────────────────────
 
 async function init() {
-  if (!sb) return;
+  if (!sb) return; // splashError already shown above
   try {
     initEventListeners();
     await initAuth();
-    setBootState('ready');
   } catch (err) {
-    const msg = err?.message ?? String(err);
-    setBootState('error', msg);
-    showFatalBootError(`App failed to initialize: ${msg}`);
+    splashError(`App failed to initialize: ${err?.message ?? String(err)}`);
   }
 }
 
