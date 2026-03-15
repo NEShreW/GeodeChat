@@ -154,13 +154,6 @@ function isRateLimitError(error) {
   return msg.includes('rate limit') || msg.includes('too many requests') || msg.includes('429');
 }
 
-function switchToLoginTab() {
-  tabLogin.classList.add('active');
-  tabSignup.classList.remove('active');
-  formLogin.classList.remove('hidden');
-  formSignup.classList.add('hidden');
-}
-
 // ─────────────────────────────────────────
 // REDIRECT IF ALREADY LOGGED IN
 // ─────────────────────────────────────────
@@ -240,20 +233,8 @@ formSignup.addEventListener('submit', async (e) => {
 
   if (error) {
     if (isRateLimitError(error)) {
-      // If signup emails are throttled, try immediate password sign-in.
-      // This succeeds when the account already exists and is confirmed,
-      // allowing users to continue without waiting on another email.
-      const { error: loginError } = await sb.auth.signInWithPassword({ email, password });
-      if (!loginError) {
-        window.location.href = 'app.html';
-        return;
-      }
-
-      switchToLoginTab();
-      document.getElementById('login-email').value = email;
-      document.getElementById('login-password').value = password;
       authError.style.color = 'var(--danger)';
-      showError('Email limit hit. Instant login was attempted but blocked. Try Google sign-in now, or disable "Confirm email" in Supabase for testing.');
+      showError(error.message);
       btn.disabled    = false;
       btn.textContent = 'Create Account';
       return;
